@@ -3,118 +3,268 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>runnode</title>
+<title>runnode · 服务控制台</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
 :root {
-  --bg: #f6f7f8; --fg: #1a1c1e; --card: #fff; --line: #dfe2e5;
-  --muted: #6b7280; --ok: #16794c; --bad: #b42318; --warn: #b45309; --accent: #2563eb;
+  color-scheme: light;
+  --bg: #f3f6f6; --fg: #172321; --card: #fff; --surface: #f7f9f9;
+  --line: #dfe8e5; --muted: #687976; --ok: #0b7a5b; --ok-soft: #e7f7f1;
+  --bad: #c13b32; --bad-soft: #fff0ee; --warn: #a76108; --warn-soft: #fff5df;
+  --accent: #126b57; --accent-hover: #0d5848; --accent-soft: #e2f2ed;
+  --shadow-sm: 0 1px 2px rgba(19, 52, 45, .04), 0 6px 18px rgba(19, 52, 45, .04);
+  --shadow-lg: 0 24px 64px rgba(12, 37, 32, .2);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16181a; --fg: #e6e8ea; --card: #1e2124; --line: #2f3337;
-    --muted: #9aa1a9; --ok: #3ddc97; --bad: #ff6b6b; --warn: #f0b429; --accent: #6ea8ff;
+    color-scheme: dark;
+    --bg: #0f1715; --fg: #e9f1ef; --card: #17211f; --surface: #1b2724;
+    --line: #2a3a36; --muted: #9baba7; --ok: #5fdbad; --ok-soft: #163a2e;
+    --bad: #ff8b82; --bad-soft: #462623; --warn: #f1bb69; --warn-soft: #3b301d;
+    --accent: #5fd2ae; --accent-hover: #7ce0c0; --accent-soft: #1d4036;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .12), 0 8px 24px rgba(0, 0, 0, .12);
+    --shadow-lg: 0 24px 64px rgba(0, 0, 0, .45);
   }
 }
 * { box-sizing: border-box; }
+html { min-width: 320px; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+  font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+  min-height: 100dvh; -webkit-font-smoothing: antialiased;
 }
-header {
-  display: flex; align-items: center; gap: 12px; padding: 14px 20px;
-  border-bottom: 1px solid var(--line); background: var(--card);
+.shell-head {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 16px;
+  min-height: 68px; padding: 10px clamp(18px, 4vw, 48px); border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card) 90%, transparent); backdrop-filter: blur(16px);
 }
-header h1 { font-size: 16px; margin: 0; font-weight: 650; }
-header .grow { flex: 1; }
-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+.brand { display: flex; align-items: center; gap: 11px; min-width: 156px; }
+.brand-mark { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; }
+.brand-mark img { display: block; width: 100%; height: 100%; }
+.brand-copy { display: grid; line-height: 1.2; }
+.brand-copy strong { font-size: 15px; letter-spacing: -.02em; }
+.brand-copy span { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.grow { flex: 1; }
+.head-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); }
+main { padding: 34px clamp(18px, 4vw, 48px) 56px; max-width: 1440px; margin: 0 auto; }
+.page-intro { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.eyebrow { margin: 0 0 6px; color: var(--accent); font-weight: 700; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+.page-intro h1 { margin: 0; font-size: clamp(25px, 3vw, 34px); line-height: 1.2; letter-spacing: -.04em; }
+.page-intro p:last-child { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+.metric { padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); box-shadow: var(--shadow-sm); }
+.metric-top { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; font-weight: 600; }
+.metric-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: var(--accent); background: var(--accent-soft); }
+.metric strong { display: block; margin-top: 12px; font-size: 28px; line-height: 1; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.metric small { display: block; margin-top: 7px; color: var(--muted); font-size: 12px; }
+.panel { overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: var(--shadow-sm); }
+.panel-head { display: flex; align-items: center; gap: 12px; padding: 17px 20px; border-bottom: 1px solid var(--line); }
+.panel-head h2 { margin: 0; font-size: 15px; letter-spacing: -.01em; }
+.project-count { padding: 2px 8px; border-radius: 999px; color: var(--muted); background: var(--surface); font-size: 11px; font-variant-numeric: tabular-nums; }
 button {
-  font: inherit; padding: 5px 10px; border: 1px solid var(--line);
-  background: var(--card); color: var(--fg); border-radius: 6px; cursor: pointer;
+  min-height: 38px; font: inherit; font-weight: 600; padding: 7px 12px; border: 1px solid var(--line);
+  background: var(--card); color: var(--fg); border-radius: 9px; cursor: pointer; touch-action: manipulation;
+  transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
-button:hover { border-color: var(--accent); }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.danger:hover { border-color: var(--bad); color: var(--bad); }
-button:disabled { opacity: .5; cursor: default; }
-table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; }
-th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { font-size: 12px; color: var(--muted); font-weight: 600; }
+button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+button:active { transform: translateY(1px); }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 2px; }
+button.primary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 20%, transparent); }
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+button.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+button.danger:hover { border-color: var(--bad); color: var(--bad); background: var(--bad-soft); }
+button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.icon-btn { display: inline-grid; place-items: center; width: 38px; padding: 0; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; background: var(--card); }
+th, td { text-align: left; padding: 14px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { padding-left: 20px; }
+th:last-child, td:last-child { padding-right: 20px; }
+th { height: 44px; background: var(--surface); color: var(--muted); font-size: 11px; letter-spacing: .04em; font-weight: 700; text-transform: uppercase; }
+tbody tr { transition: background .18s ease; }
+tbody tr:hover { background: color-mix(in srgb, var(--accent-soft) 32%, var(--card)); }
 tr:last-child td { border-bottom: 0; }
-td.name { font-weight: 600; }
-.badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 12px; border: 1px solid; }
-.s-active { color: var(--ok); border-color: var(--ok); }
-.s-failed { color: var(--bad); border-color: var(--bad); }
-.s-inactive { color: var(--muted); border-color: var(--line); }
-.s-activating { color: var(--warn); border-color: var(--warn); }
+td.name { font-weight: 700; letter-spacing: -.01em; }
+.project-cell { display: flex; align-items: center; gap: 11px; }
+.project-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: var(--accent); background: var(--accent-soft); font-size: 13px; font-weight: 800; text-transform: uppercase; }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 650; border: 1px solid transparent; }
+.badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.s-active { color: var(--ok); background: var(--ok-soft); }
+.s-failed { color: var(--bad); background: var(--bad-soft); }
+.s-inactive { color: var(--muted); background: var(--surface); border-color: var(--line); }
+.s-activating { color: var(--warn); background: var(--warn-soft); }
 .hot { color: var(--warn); font-weight: 700; }
 .muted { color: var(--muted); }
-.ops { display: flex; gap: 5px; }
-label { display: block; margin: 10px 0 3px; font-size: 12px; color: var(--muted); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ops { display: flex; gap: 6px; }
+.ops button { min-height: 32px; padding: 4px 9px; font-size: 12px; }
+label { display: block; margin: 16px 0 6px; font-size: 12px; font-weight: 650; color: var(--fg); }
 input[type=text], input[type=password], input[type=number], textarea, select {
-  width: 100%; font: inherit; padding: 6px 8px; border: 1px solid var(--line);
-  border-radius: 6px; background: var(--bg); color: var(--fg);
+  width: 100%; min-height: 44px; font: inherit; padding: 9px 11px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--surface); color: var(--fg); transition: border-color .18s, box-shadow .18s, background .18s;
 }
-textarea { min-height: 76px; font-family: ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
+input:hover, textarea:hover, select:hover { border-color: color-mix(in srgb, var(--muted) 65%, var(--line)); }
+input:focus, textarea:focus, select:focus { border-color: var(--accent); background: var(--card); }
+input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--muted) 72%, transparent); }
+textarea { min-height: 100px; font-family: ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
 dialog {
-  border: 1px solid var(--line); border-radius: 10px; background: var(--card);
-  color: var(--fg); padding: 0; max-width: 96vw;
+  width: min(680px, calc(100vw - 28px)); border: 1px solid var(--line); border-radius: 18px; background: var(--card);
+  color: var(--fg); padding: 0; box-shadow: var(--shadow-lg);
 }
-dialog::backdrop { background: #0008; }
-.dlg-head { padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 650; }
-.dlg-body { padding: 12px 16px; max-height: 68vh; overflow: auto; }
-.dlg-foot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
-.row { display: flex; gap: 10px; }
+dialog::backdrop { background: rgba(4, 14, 12, .64); backdrop-filter: blur(4px); }
+.dlg-head { padding: 20px 22px 16px; border-bottom: 1px solid var(--line); font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
+.dlg-sub { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.dlg-body { padding: 6px 22px 22px; max-height: 68vh; overflow: auto; }
+.dlg-foot { padding: 14px 22px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; background: var(--surface); }
+.row { display: flex; gap: 14px; }
 .row > * { flex: 1; }
+#logs { width: min(1100px, calc(100vw - 28px)); }
 #logbox {
-  margin: 0; padding: 10px 12px; background: #0b0d0f; color: #d7dde3;
-  font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace;
+  margin: 0; padding: 18px 20px; background: #09110f; color: #d7e3df;
+  font: 12px/1.65 ui-monospace, Menlo, Consolas, monospace;
   white-space: pre-wrap; word-break: break-all;
-  height: 62vh; overflow: auto;
+  height: 58vh; overflow: auto;
 }
 #logbox .p-err { color: #ff8a80; }
 #logbox .p-warn { color: #ffd166; }
 #logbox .p-dim { color: #7d878f; }
 #logbox time { color: #5f6a72; margin-right: 8px; }
-.logbar { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.logbar { display: flex; gap: 9px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .logbar label { display: flex; align-items: center; gap: 4px; margin: 0; font-size: 13px; color: var(--fg); }
 .logbar input[type=text] { width: 160px; }
 .err { color: var(--bad); margin-top: 8px; white-space: pre-wrap; }
-.empty { padding: 40px; text-align: center; color: var(--muted); }
-#login { max-width: 320px; margin: 12vh auto; background: var(--card); padding: 20px; border: 1px solid var(--line); border-radius: 10px; }
+.empty { padding: 64px 24px; text-align: center; color: var(--muted); }
+.empty-icon { display: grid; place-items: center; width: 48px; height: 48px; margin: 0 auto 12px; border-radius: 14px; background: var(--accent-soft); color: var(--accent); }
+#login { width: min(400px, calc(100% - 32px)); margin: 13vh auto; background: var(--card); padding: 28px; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow-lg); }
+.login-brand { margin-bottom: 30px; }
+.login-brand .brand-mark { width: 44px; height: 44px; margin-bottom: 18px; }
+.login-brand h1 { margin: 0; font-size: 24px; letter-spacing: -.035em; }
+.login-brand p { margin: 7px 0 0; color: var(--muted); }
 .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 1380px) {
+  th:nth-child(3), td:nth-child(3), th:nth-child(7), td:nth-child(7), th:nth-child(8), td:nth-child(8) { display: none; }
+}
+@media (max-width: 900px) {
+  .metrics { grid-template-columns: 1fr 1fr; }
+  .metric:last-child { grid-column: 1 / -1; }
+  th:nth-child(5), td:nth-child(5) { display: none; }
+}
+@media (max-width: 680px) {
+  .shell-head { min-height: 62px; gap: 8px; }
+  .brand-copy span, .head-status { display: none; }
+  main { padding-top: 24px; }
+  .page-intro { align-items: flex-start; }
+  .page-intro p:last-child { max-width: 25ch; }
+  .metrics { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .metric { padding: 15px; }
+  .metric:last-child { grid-column: 1 / -1; }
+  .table-wrap { overflow: visible; }
+  table, tbody { display: block; }
+  thead { display: none; }
+  tbody { padding: 10px; }
+  tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; padding: 15px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  tbody tr:last-child { margin-bottom: 0; }
+  tbody tr:hover { background: var(--card); }
+  td, th:first-child, td:first-child, th:last-child, td:last-child { display: block; padding: 0; border: 0; white-space: normal; }
+  td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  td.name, td.ops { grid-column: 1 / -1; }
+  td.name::before, td.ops::before { display: none; }
+  .ops { flex-wrap: wrap; padding-top: 4px; }
+  .ops button { flex: 1 1 auto; min-height: 38px; }
+  .row { display: block; }
+  .dlg-body { max-height: 66vh; }
+}
+@media (max-width: 420px) {
+  .brand { min-width: 0; }
+  .brand-copy { display: none; }
+  .page-intro p:last-child { display: none; }
+  .metrics { grid-template-columns: 1fr; }
+  .metric:last-child { grid-column: auto; }
+  .metric { display: grid; grid-template-columns: 1fr auto; align-items: center; }
+  .metric strong { grid-row: 1 / span 2; grid-column: 2; margin: 0; }
+  .metric small { margin-top: 3px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
 </style>
 </head>
 <body>
 
 <div id="login" hidden>
-  <h1 style="margin:0 0 12px;font-size:16px">runnode 登录</h1>
-  <input type="password" id="pw" placeholder="管理员密码" autocomplete="current-password">
-  <div class="err" id="login-err"></div>
-  <div style="margin-top:12px"><button class="primary" id="do-login" style="width:100%">登录</button></div>
+  <div class="login-brand">
+    <div class="brand-mark"><img src="/logo.svg" alt="runnode"></div>
+    <h1>欢迎回来</h1>
+    <p>登录 runnode，管理你的 Node.js 服务。</p>
+  </div>
+  <label for="pw">管理员密码</label>
+  <input type="password" id="pw" placeholder="输入管理员密码" autocomplete="current-password">
+  <div class="err" id="login-err" role="alert"></div>
+  <div style="margin-top:18px"><button class="primary" id="do-login" style="width:100%">进入控制台</button></div>
 </div>
 
 <div id="app" hidden>
-  <header>
-    <h1>runnode</h1>
-    <span class="muted" id="tick"></span>
+  <header class="shell-head">
+    <div class="brand">
+      <div class="brand-mark"><img src="/logo.svg" alt="runnode"></div>
+      <span class="brand-copy"><strong>runnode</strong><span>systemd control plane</span></span>
+    </div>
     <span class="grow"></span>
-    <button class="primary" id="new">新建项目</button>
-    <button id="logout">退出</button>
+    <span class="head-status"><i class="pulse" aria-hidden="true"></i><span id="tick">正在同步</span></span>
+    <button class="primary" id="new">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      新建项目
+    </button>
+    <button class="ghost icon-btn" id="logout" aria-label="退出登录" title="退出登录">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4M14 8l4 4-4 4M8 12h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
   </header>
   <main>
-    <table>
-      <thead><tr>
-        <th>项目</th><th>状态</th><th>运行时长</th><th>内存</th><th>CPU</th>
-        <th>重启</th><th>PID</th><th>自启</th><th>操作</th>
-      </tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-    <div class="empty" id="empty" hidden>还没有项目。点右上角「新建项目」。</div>
+    <section class="page-intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Overview</p>
+        <h1 id="page-title">服务概览</h1>
+        <p>集中查看运行状态、资源用量与异常重启。</p>
+      </div>
+    </section>
+    <section class="metrics" aria-label="服务统计">
+      <article class="metric">
+        <div class="metric-top"><span>全部项目</span><span class="metric-icon" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span></div>
+        <strong id="stat-total">0</strong><small>已纳入 runnode 管理</small>
+      </article>
+      <article class="metric">
+        <div class="metric-top"><span>运行中</span><span class="metric-icon" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="m9 7 8 5-8 5V7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/></svg></span></div>
+        <strong id="stat-active">0</strong><small id="stat-health">暂无运行中的服务</small>
+      </article>
+      <article class="metric">
+        <div class="metric-top"><span>内存占用</span><span class="metric-icon" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none"><rect x="6" y="6" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m12 0h4M2 15h4m12 0h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span></div>
+        <strong id="stat-memory">0 B</strong><small>所有运行服务合计</small>
+      </article>
+    </section>
+    <section class="panel" aria-labelledby="projects-title">
+      <div class="panel-head"><h2 id="projects-title">项目列表</h2><span class="project-count" id="project-count">0 个项目</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>项目</th><th>状态</th><th>运行时长</th><th>内存</th><th>CPU</th>
+            <th>重启</th><th>PID</th><th>自启</th><th>操作</th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="empty" hidden>
+        <span class="empty-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+        还没有项目，点击右上角「新建项目」开始。
+      </div>
+    </section>
   </main>
 </div>
 
-<dialog id="edit">
+<dialog id="edit" aria-labelledby="edit-title">
   <form id="form" method="dialog">
-    <div class="dlg-head" id="edit-title">新建项目</div>
+    <div class="dlg-head"><span id="edit-title">新建项目</span><span class="dlg-sub">配置 systemd 服务及运行环境</span></div>
     <div class="dlg-body">
       <label>项目名（小写字母/数字/短横，创建后不可改）</label>
       <input type="text" name="slug" required placeholder="myapp">
@@ -154,7 +304,7 @@ dialog::backdrop { background: #0008; }
           <input type="text" name="memoryMax" placeholder="512M">
         </div>
       </div>
-      <div class="err" id="edit-err"></div>
+      <div class="err" id="edit-err" role="alert"></div>
     </div>
     <div class="dlg-foot">
       <button type="button" id="edit-cancel">取消</button>
@@ -163,8 +313,8 @@ dialog::backdrop { background: #0008; }
   </form>
 </dialog>
 
-<dialog id="logs">
-  <div class="dlg-head" id="log-title">日志</div>
+<dialog id="logs" aria-labelledby="log-title">
+  <div class="dlg-head"><span id="log-title">日志</span><span class="dlg-sub">来自 systemd journal 的实时输出</span></div>
   <div class="logbar">
     <label><input type="checkbox" id="follow" checked> 自动滚动</label>
     <label><input type="checkbox" id="thisrun"> 只看本次运行</label>
@@ -207,6 +357,8 @@ function showLogin() {
 
 $('#do-login').onclick = async () => {
   $('#login-err').textContent = '';
+  $('#do-login').disabled = true;
+  $('#do-login').textContent = '正在验证…';
   try {
     await api('/login', { method: 'POST', body: JSON.stringify({ password: $('#pw').value }) });
     $('#pw').value = '';
@@ -214,6 +366,7 @@ $('#do-login').onclick = async () => {
     $('#app').hidden = false;
     startPoll();
   } catch (e) { $('#login-err').textContent = e.message; }
+  finally { $('#do-login').disabled = false; $('#do-login').textContent = '进入控制台'; }
 };
 $('#pw').onkeydown = (e) => { if (e.key === 'Enter') $('#do-login').click(); };
 
@@ -246,6 +399,14 @@ let projects = [];
 function render(list) {
   projects = list;
   $('#empty').hidden = list.length > 0;
+  const active = list.filter((p) => p.state === 'active').length;
+  const failed = list.filter((p) => p.state === 'failed').length;
+  const memory = list.reduce((sum, p) => sum + (Number(p.memory) || 0), 0);
+  $('#stat-total').textContent = list.length;
+  $('#stat-active').textContent = active;
+  $('#stat-memory').textContent = fmtBytes(memory);
+  $('#stat-health').textContent = failed ? failed + ' 个服务需要处理' : active ? '当前服务运行正常' : '暂无运行中的服务';
+  $('#project-count').textContent = list.length + ' 个项目';
   $('#rows').innerHTML = list.map((p) => {
     const cls = 's-' + (p.state === 'active' ? 'active' : p.state === 'failed' ? 'failed'
       : p.state.startsWith('activat') || p.state.startsWith('deactivat') ? 'activating' : 'inactive');
@@ -258,17 +419,17 @@ function render(list) {
       : '';
     const running = p.state === 'active';
     return '<tr data-slug="' + esc(p.slug) + '">'
-      + '<td class="name">' + esc(p.slug) + '</td>'
-      + '<td><span class="badge ' + cls + '">' + esc(stateText) + '</span>' + why + '</td>'
-      + '<td>' + fmtDur(p.uptimeSec) + '</td>'
-      + '<td>' + fmtBytes(p.memory) + '</td>'
-      + '<td>' + fmtCpu(p.cpuSec) + '</td>'
+      + '<td class="name"><span class="project-cell"><span class="project-avatar" aria-hidden="true">' + esc(p.slug.slice(0, 2)) + '</span><span>' + esc(p.slug) + '</span></span></td>'
+      + '<td data-label="状态"><span class="badge ' + cls + '">' + esc(stateText) + '</span>' + why + '</td>'
+      + '<td data-label="运行时长" class="mono">' + fmtDur(p.uptimeSec) + '</td>'
+      + '<td data-label="内存" class="mono">' + fmtBytes(p.memory) + '</td>'
+      + '<td data-label="CPU" class="mono">' + fmtCpu(p.cpuSec) + '</td>'
       // 轮询是取样，会漏掉崩溃循环的瞬时状态，所以重启次数要显眼
-      + '<td class="' + (p.restarts > 0 ? 'hot' : 'muted') + '">' + p.restarts + '</td>'
-      + '<td class="muted">' + (p.pid || '—') + '</td>'
-      + '<td>' + (p.enabled ? '是' : '<span class="muted">否</span>') + '</td>'
+      + '<td data-label="重启" class="mono ' + (p.restarts > 0 ? 'hot' : 'muted') + '">' + p.restarts + '</td>'
+      + '<td data-label="PID" class="muted mono">' + (p.pid || '—') + '</td>'
+      + '<td data-label="自启">' + (p.enabled ? '已开启' : '<span class="muted">未开启</span>') + '</td>'
       + '<td class="ops">'
-      + '<button data-act="' + (running ? 'stop' : 'start') + '">' + (running ? '停止' : '启动') + '</button>'
+      + '<button data-act="' + (running ? 'stop' : 'start') + '"' + (running ? ' class="danger"' : '') + '>' + (running ? '停止' : '启动') + '</button>'
       + '<button data-act="restart"' + (running ? '' : ' disabled') + '>重启</button>'
       + '<button data-act="' + (p.enabled ? 'disable' : 'enable') + '">' + (p.enabled ? '关自启' : '开自启') + '</button>'
       + '<button data-act="logs">日志</button>'
@@ -295,12 +456,13 @@ $('#rows').onclick = async (e) => {
   }
 
   btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
   try {
     // 操作后立刻用返回的状态更新这一行，不等下一个 tick
     const r = await api('/projects/' + slug + '/' + act, { method: 'POST', body: '{}' });
     if (r.status) render(projects.map((p) => (p.slug === slug ? r.status : p)));
     refresh();
-  } catch (err) { alert(err.message); btn.disabled = false; }
+  } catch (err) { alert(err.message); btn.disabled = false; btn.removeAttribute('aria-busy'); }
 };
 
 // ---------------------------------------------------------------- 轮询（2 秒，隐藏时停）
@@ -309,7 +471,7 @@ let timer = null;
 async function refresh() {
   try {
     render(await api('/projects'));
-    $('#tick').textContent = new Date().toLocaleTimeString();
+    $('#tick').textContent = '已同步 · ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   } catch { /* 401 已处理，其他忽略等下一轮 */ }
 }
 function startPoll() {
