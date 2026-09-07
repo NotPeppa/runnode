@@ -97,7 +97,7 @@ td.name { font-weight: 700; letter-spacing: -.01em; }
 .hot { color: var(--warn); font-weight: 700; }
 .muted { color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; }
-.ops { display: flex; gap: 6px; }
+.ops { display: flex; align-items: center; gap: 6px; }
 .ops button { min-height: 32px; padding: 4px 9px; font-size: 12px; }
 label { display: block; margin: 16px 0 6px; font-size: 12px; font-weight: 650; color: var(--fg); }
 input[type=text], input[type=password], input[type=number], textarea, select {
@@ -173,8 +173,8 @@ label.check input { width: auto; }
   tbody tr:hover { background: var(--card); }
   td, th:first-child, td:first-child, th:last-child, td:last-child { display: block; padding: 0; border: 0; white-space: normal; }
   td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-  td.name, td.ops { grid-column: 1 / -1; }
-  td.name::before, td.ops::before { display: none; }
+  td.name, td.actions { grid-column: 1 / -1; }
+  td.name::before, td.actions::before { display: none; }
   .ops { flex-wrap: wrap; padding-top: 4px; }
   .ops button { flex: 1 1 auto; min-height: 38px; }
   .row { display: block; }
@@ -438,14 +438,14 @@ function render(list) {
       + '<td data-label="重启" class="mono ' + (p.restarts > 0 ? 'hot' : 'muted') + '">' + p.restarts + '</td>'
       + '<td data-label="PID" class="muted mono">' + (p.pid || '—') + '</td>'
       + '<td data-label="自启">' + (p.enabled ? '已开启' : '<span class="muted">未开启</span>') + '</td>'
-      + '<td class="ops">'
+      + '<td class="actions" data-label="操作"><div class="ops">'
       + '<button data-act="' + (running ? 'stop' : 'start') + '"' + (running ? ' class="danger"' : '') + '>' + (running ? '停止' : '启动') + '</button>'
       + '<button data-act="restart"' + (running ? '' : ' disabled') + '>重启</button>'
       + '<button data-act="' + (p.enabled ? 'disable' : 'enable') + '">' + (p.enabled ? '关自启' : '开自启') + '</button>'
       + '<button data-act="logs">日志</button>'
       + '<button data-act="edit">编辑</button>'
       + '<button data-act="delete" class="danger">删除</button>'
-      + '</td></tr>';
+      + '</div></td></tr>';
   }).join('');
 }
 
