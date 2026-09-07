@@ -6,6 +6,9 @@ DEST=/opt/runnode
 CONFIG=/etc/runnode/config.json
 ADDR="${RUNNODE_ADDR:-127.0.0.1:7788}"
 
+# 源码目录取脚本自身位置，不取 cwd —— 允许 `bash /path/to/install.sh` 从任意目录执行
+SRC="$(cd "$(dirname "$0")" && pwd -P)"
+
 [ "$(id -u)" = 0 ] || { echo "需要 root：sudo ./install.sh"; exit 1; }
 command -v systemctl >/dev/null || { echo "找不到 systemctl，本面板依赖 systemd"; exit 1; }
 
@@ -22,13 +25,19 @@ if [ ! -d /var/log/journal ]; then
 fi
 
 # --- 代码
-echo "安装到 $DEST"
 mkdir -p "$DEST"
-for f in package.json server.js systemd.js; do
-  cp "$f" "$DEST/$f"
-done
-rm -rf "$DEST/public"
-cp -r public "$DEST/public"
+DEST_R="$(cd "$DEST" && pwd -P)"
+if [ "$SRC" = "$DEST_R" ]; then
+  # 直接把仓库 clone 到了 /opt/runnode。跳过复制 —— 否则 rm -rf public 会删掉源码。
+  echo "源码已在 $DEST，跳过复制"
+else
+  echo "安装到 $DEST"
+  for f in package.json server.js systemd.js; do
+    cp "$SRC/$f" "$DEST/$f"
+  done
+  rm -rf "$DEST/public"
+  cp -r "$SRC/public" "$DEST/public"
+fi
 chown -R root:root "$DEST"
 chmod -R go-w "$DEST"
 
@@ -38,7 +47,8 @@ chmod -R go-w "$DEST"
 if [ -f "$CONFIG" ]; then
   echo "已有配置 $CONFIG，保留原密码"
 else
-  PW="$(head -c 12 /dev/urandom | base64 | tr -d '/+=' | head -c 16)"
+  # 多取一些熵再过滤，保证 tr 删掉 /+= 之后还有足够长度
+  PW="$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 20)"
   ( cd "$DEST" && "$NODE" server.js --init "$PW" )
   chmod 600 "$CONFIG"
   echo
