@@ -28,18 +28,31 @@ const scrypt = (password, salt) =>
 
 function initConfig(password) {
   if (!password || password.length < 8) {
-    console.error('密码至少 8 位');
+    console.error('用法：node server.js --init <密码>（至少 8 位）');
     process.exit(1);
   }
+  const existed = fs.existsSync(CONFIG);
   const salt = crypto.randomBytes(16).toString('hex');
   const cfg = {
     salt,
     hash: scrypt(password, salt).toString('hex'),
+    // 一起换掉签名密钥：改密码就该把已登录的会话全部踢掉
     secret: crypto.randomBytes(32).toString('hex'),
   };
-  fs.mkdirSync(path.dirname(CONFIG), { recursive: true });
-  fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  try {
+    fs.mkdirSync(path.dirname(CONFIG), { recursive: true });
+    fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  } catch (e) {
+    console.error('写 ' + CONFIG + ' 失败：' + e.message);
+    if (e.code === 'EACCES' || e.code === 'EPERM') console.error('需要 root，加 sudo 再试');
+    process.exit(1);
+  }
   console.log('已写入 ' + CONFIG);
+  if (existed) {
+    // 配置只在启动时读一次，不重启的话面板还在用旧密码
+    console.log('已覆盖原密码，所有登录会话失效。执行下面这行才会生效：');
+    console.log('  systemctl restart runnode-panel');
+  }
 }
 
 if (process.argv[2] === '--init') {
@@ -246,7 +259,9 @@ app.use((err, req, res, _next) => {
 
 const [host, port] = ADDR.split(':');
 app.listen(Number(port), host, () => {
-  console.log('runnode 面板监听 http://' + ADDR);
+  // 版本号打进 journal：更新之后靠这行确认跑的是新代码还是旧进程
+  console.log('runnode ' + require('./package.json').version +
+    ' 监听 http://' + ADDR + ' (pid ' + process.pid + ')');
   if (host !== '127.0.0.1' && host !== 'localhost') {
     console.warn('警告：面板以 root 运行且监听非本地地址。请确认前面有 TLS 和访问控制。');
   }
