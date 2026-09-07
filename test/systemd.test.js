@@ -279,3 +279,47 @@ test('cgroup 统计返回 UINT64_MAX 时也当作未启用', () => {
 test('SHOW_PROPS 里 Id 必须在第一位（多 unit 分块靠它归属）', () => {
   assert.match(sd.SHOW_PROPS, /^Id,/);
 });
+
+// 「崩溃后到底会不会停」的算术。我第一版就把它算错过：默认 5 次/10 秒配上
+// RestartSec=3，窗口里只会发生 4 次启动，上限永远撞不到 —— 实际是无限重启。
+const { restartLimitEffect } = require('../public/restart-limit');
+
+test('重启上限：默认组合配 RestartSec=3 实际不会停', () => {
+  const e = restartLimitEffect({ restart: 'always', restartSec: 3 });
+  assert.equal(e.mode, 'never-stops');
+  assert.equal(e.maxStarts, 4);   // t=0,3,6,9
+  assert.equal(e.burst, 5);
+  assert.equal(e.iv, 10);
+  assert.equal(e.usingDefaults, true);
+  assert.equal(e.needIv, 16);     // 要 > 5×3
+});
+
+test('重启上限：窗口够大就真的会停', () => {
+  const e = restartLimitEffect({
+    restart: 'always', restartSec: 3, startLimitBurst: '5', startLimitIntervalSec: '20',
+  });
+  assert.equal(e.mode, 'stops');
+  assert.equal(e.maxStarts, 7);
+  assert.equal(e.usingDefaults, false);
+});
+
+test('重启上限：间隔短也能撞上默认上限', () => {
+  // RestartSec=1 时 10 秒里有 11 次启动 > 5，默认配置就是有效的
+  assert.equal(restartLimitEffect({ restart: 'always', restartSec: 1 }).mode, 'stops');
+});
+
+test('重启上限：重启间隔比窗口还长时同样撞不到', () => {
+  const e = restartLimitEffect({
+    restart: 'always', restartSec: 10, startLimitBurst: '3', startLimitIntervalSec: '10',
+  });
+  assert.equal(e.mode, 'never-stops');
+  assert.equal(e.maxStarts, 2);
+  assert.equal(e.needIv, 31);
+});
+
+test('重启上限：窗口 0 = 永远重试；策略 no = 不重试', () => {
+  assert.equal(restartLimitEffect({ restart: 'always', startLimitIntervalSec: '0' }).mode, 'unlimited');
+  assert.equal(restartLimitEffect({ restart: 'no' }).mode, 'no-restart');
+  // 策略 no 优先于任何上限设置
+  assert.equal(restartLimitEffect({ restart: 'no', startLimitIntervalSec: '0' }).mode, 'no-restart');
+});

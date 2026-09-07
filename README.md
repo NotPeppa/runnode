@@ -197,6 +197,37 @@ npm run monitor               → /usr/local/bin/npm run monitor
 想省掉这一层就把 `package.json` 里那条脚本的内容直接填进来 —— 比如
 `"monitor": "tsx scripts/monitor.ts"` 就填 `tsx scripts/monitor.ts`。
 
+### 失败重启次数
+
+**默认会一直重启**，这点容易看错，说清楚。
+
+systemd 的 `StartLimitBurst` / `StartLimitIntervalSec` 数的是**窗口内的启动次数**。
+启动发生在 t=0、`RestartSec`、2·`RestartSec`……，所以窗口 `iv` 内最多只会发生
+`floor(iv / RestartSec) + 1` 次启动。这个数不超过 burst 时，上限永远撞不到。
+
+默认组合 burst=5 / 窗口=10 秒，配上模板里的 `RestartSec=3`：
+
+```
+启动时刻  0s   3s   6s   9s     →  10 秒窗口内 4 次 < 5 次上限  →  永远不停
+```
+
+要真的让它停下来，**窗口必须大于 `次数上限 × 重启间隔`**：
+
+| 想要的效果 | 重启间隔 | 次数上限 | 统计窗口 |
+|---|---|---|---|
+| 崩 5 次就放弃 | 3 | 5 | **16**（> 5×3） |
+| 崩 3 次就放弃 | 5 | 3 | **16**（> 3×5） |
+| 永远重试（当前默认行为） | 3 | 留空 | 留空，或填 `0` |
+| 崩一次就不管 | — | — | 重启策略选 `no` |
+
+表单里这两个字段下面会**实时算出当前设置的实际效果**，包括「这个组合永远不会停，
+要停窗口至少填 N」。算术在 `public/restart-limit.js`，浏览器和单元测试共用一份 ——
+这个公式我第一版写错过，所以专门测了。
+
+撞上限后状态变 `failed`、死因显示 `start-limit-hit`。面板点「启动」会自动先
+`systemctl reset-failed` 清掉计数再启动，否则 systemd 会直接拒绝
+（`start request repeated too quickly`）。
+
 ## 日志
 
 页面里实时跟随（SSE），可暂停自动滚动、按正则搜索、下载。

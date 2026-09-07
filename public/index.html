@@ -330,11 +330,7 @@ label.check input { width: auto; }
           <input type="text" name="startLimitIntervalSec" placeholder="10">
         </div>
       </div>
-      <div class="hint">
-        留空用 systemd 默认：<strong>10 秒内最多重启 5 次</strong>，超过就不再自动重启、
-        状态变 failed 且死因显示 <code>start-limit-hit</code>。
-        窗口填 <code>0</code> 表示不限次数、永远重启。撞上限后在面板点「启动」会自动清计数重试。
-      </div>
+      <div class="hint" id="restart-hint"></div>
       <div class="err" id="edit-err" role="alert"></div>
     </div>
     <div class="dlg-foot">
@@ -358,6 +354,7 @@ label.check input { width: auto; }
   <pre id="logbox"></pre>
 </dialog>
 
+<script src="/restart-limit.js"></script>
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -530,6 +527,7 @@ function openEdit(slug) {
     form.restartSec.value = 3;
     form.exec.value = '';
     syncRootWarn();
+    restartHint();
     $('#edit').showModal();
     return;
   }
@@ -547,6 +545,7 @@ function openEdit(slug) {
     form.allowRoot.checked = p.user === 'root';
     form.envtext.value = Object.entries(p.env).map(([k, v]) => k + '=' + v).join('\n');
     syncRootWarn();
+    restartHint();
     $('#edit').showModal();
   }).catch((e) => alert(e.message));
 }
@@ -557,6 +556,36 @@ function syncRootWarn() {
   if (isRoot) form.allowRoot.checked = true;
   $('#root-warn').hidden = !(isRoot || form.allowRoot.checked);
 }
+// 算术在 /restart-limit.js 里（和单元测试共用一份），这里只把结论写成人话
+function restartHint() {
+  const e = restartLimitEffect({
+    restart: form.restart.value,
+    restartSec: form.restartSec.value,
+    startLimitBurst: form.startLimitBurst.value,
+    startLimitIntervalSec: form.startLimitIntervalSec.value,
+  });
+  const box = $('#restart-hint');
+  const dflt = e.usingDefaults ? '（systemd 默认）' : '';
+
+  if (e.mode === 'no-restart') {
+    box.textContent = '崩溃后不会自动重启。';
+  } else if (e.mode === 'unlimited') {
+    box.textContent = '窗口为 0：不限次数，崩溃后每 ' + e.sec + ' 秒重试，永远不放弃。';
+  } else if (e.mode === 'never-stops') {
+    box.innerHTML = '<strong>当前设置实际不会停：</strong>每 ' + e.sec + ' 秒重启一次，' +
+      e.iv + ' 秒窗口里最多只发生 ' + e.maxStarts + ' 次启动，达不到 ' + e.burst +
+      ' 次上限' + dflt + '。要真的在 ' + e.burst + ' 次后停下，窗口至少填 ' + e.needIv + '。';
+  } else {
+    box.textContent = '崩溃后每 ' + e.sec + ' 秒重启，' + e.iv + ' 秒内累计 ' + e.burst +
+      ' 次失败就停止重试' + dflt + '，状态变 failed、死因 start-limit-hit。' +
+      '面板点「启动」会清掉计数重试。';
+  }
+}
+for (const f of [form.restartSec, form.startLimitBurst, form.startLimitIntervalSec]) {
+  f.oninput = restartHint;
+}
+form.restart.onchange = restartHint;
+
 form.user.oninput = syncRootWarn;
 form.allowRoot.onchange = syncRootWarn;
 
