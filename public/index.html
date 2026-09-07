@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>runnode</title>
+<style>
+:root {
+  --bg: #f6f7f8; --fg: #1a1c1e; --card: #fff; --line: #dfe2e5;
+  --muted: #6b7280; --ok: #16794c; --bad: #b42318; --warn: #b45309; --accent: #2563eb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181a; --fg: #e6e8ea; --card: #1e2124; --line: #2f3337;
+    --muted: #9aa1a9; --ok: #3ddc97; --bad: #ff6b6b; --warn: #f0b429; --accent: #6ea8ff;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+}
+header {
+  display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+  border-bottom: 1px solid var(--line); background: var(--card);
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+header .grow { flex: 1; }
+main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+button {
+  font: inherit; padding: 5px 10px; border: 1px solid var(--line);
+  background: var(--card); color: var(--fg); border-radius: 6px; cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger:hover { border-color: var(--bad); color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+td.name { font-weight: 600; }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 12px; border: 1px solid; }
+.s-active { color: var(--ok); border-color: var(--ok); }
+.s-failed { color: var(--bad); border-color: var(--bad); }
+.s-inactive { color: var(--muted); border-color: var(--line); }
+.s-activating { color: var(--warn); border-color: var(--warn); }
+.hot { color: var(--warn); font-weight: 700; }
+.muted { color: var(--muted); }
+.ops { display: flex; gap: 5px; }
+label { display: block; margin: 10px 0 3px; font-size: 12px; color: var(--muted); }
+input[type=text], input[type=password], input[type=number], textarea, select {
+  width: 100%; font: inherit; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--fg);
+}
+textarea { min-height: 76px; font-family: ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
+dialog {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+  color: var(--fg); padding: 0; max-width: 96vw;
+}
+dialog::backdrop { background: #0008; }
+.dlg-head { padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 650; }
+.dlg-body { padding: 12px 16px; max-height: 68vh; overflow: auto; }
+.dlg-foot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
+.row { display: flex; gap: 10px; }
+.row > * { flex: 1; }
+#logbox {
+  margin: 0; padding: 10px 12px; background: #0b0d0f; color: #d7dde3;
+  font: 12px/1.55 ui-monospace, Menlo, Consolas, monospace;
+  white-space: pre-wrap; word-break: break-all;
+  height: 62vh; overflow: auto;
+}
+#logbox .p-err { color: #ff8a80; }
+#logbox .p-warn { color: #ffd166; }
+#logbox .p-dim { color: #7d878f; }
+#logbox time { color: #5f6a72; margin-right: 8px; }
+.logbar { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.logbar label { display: flex; align-items: center; gap: 4px; margin: 0; font-size: 13px; color: var(--fg); }
+.logbar input[type=text] { width: 160px; }
+.err { color: var(--bad); margin-top: 8px; white-space: pre-wrap; }
+.empty { padding: 40px; text-align: center; color: var(--muted); }
+#login { max-width: 320px; margin: 12vh auto; background: var(--card); padding: 20px; border: 1px solid var(--line); border-radius: 10px; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div id="login" hidden>
+  <h1 style="margin:0 0 12px;font-size:16px">runnode 登录</h1>
+  <input type="password" id="pw" placeholder="管理员密码" autocomplete="current-password">
+  <div class="err" id="login-err"></div>
+  <div style="margin-top:12px"><button class="primary" id="do-login" style="width:100%">登录</button></div>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>runnode</h1>
+    <span class="muted" id="tick"></span>
+    <span class="grow"></span>
+    <button class="primary" id="new">新建项目</button>
+    <button id="logout">退出</button>
+  </header>
+  <main>
+    <table>
+      <thead><tr>
+        <th>项目</th><th>状态</th><th>运行时长</th><th>内存</th><th>CPU</th>
+        <th>重启</th><th>PID</th><th>自启</th><th>操作</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden>还没有项目。点右上角「新建项目」。</div>
+  </main>
+</div>
+
+<dialog id="edit">
+  <form id="form" method="dialog">
+    <div class="dlg-head" id="edit-title">新建项目</div>
+    <div class="dlg-body">
+      <label>项目名（小写字母/数字/短横，创建后不可改）</label>
+      <input type="text" name="slug" required placeholder="myapp">
+      <div class="row">
+        <div>
+          <label>运行用户（不存在会自动创建）</label>
+          <input type="text" name="user" required placeholder="myapp">
+        </div>
+        <div>
+          <label>node 可执行文件（绝对路径）</label>
+          <input type="text" name="node" required placeholder="/usr/local/bin/node">
+        </div>
+      </div>
+      <label>工作目录（绝对路径）</label>
+      <input type="text" name="cwd" required placeholder="/srv/myapp">
+      <label>启动参数</label>
+      <input type="text" name="args" required placeholder="dist/index.js">
+      <div class="hint">最终 ExecStart = &lt;node 路径&gt; &lt;启动参数&gt;</div>
+      <label>环境变量（每行一个 KEY=VALUE）</label>
+      <textarea name="envtext" placeholder="NODE_ENV=production&#10;PORT=3000"></textarea>
+      <div class="hint">工作目录下的 .env 会自动加载（不存在则忽略）</div>
+      <div class="row">
+        <div>
+          <label>重启策略</label>
+          <select name="restart">
+            <option value="always">always</option>
+            <option value="on-failure">on-failure</option>
+            <option value="no">no</option>
+          </select>
+        </div>
+        <div>
+          <label>重启间隔（秒）</label>
+          <input type="number" name="restartSec" value="3" min="1" max="3600">
+        </div>
+        <div>
+          <label>内存上限（可空）</label>
+          <input type="text" name="memoryMax" placeholder="512M">
+        </div>
+      </div>
+      <div class="err" id="edit-err"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" id="edit-cancel">取消</button>
+      <button type="button" class="primary" id="edit-save">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="logs">
+  <div class="dlg-head" id="log-title">日志</div>
+  <div class="logbar">
+    <label><input type="checkbox" id="follow" checked> 自动滚动</label>
+    <label><input type="checkbox" id="thisrun"> 只看本次运行</label>
+    <input type="text" id="grep" placeholder="搜索（正则）">
+    <button id="log-apply">应用</button>
+    <span class="grow" style="flex:1"></span>
+    <a id="log-dl" download><button type="button">下载</button></a>
+    <button id="log-close">关闭</button>
+  </div>
+  <pre id="logbox"></pre>
+</dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function api(path, opts = {}) {
+  const method = opts.method || 'GET';
+  // 服务端对所有写操作要求 JSON content-type（CSRF 防护），DELETE 也算
+  const write = method !== 'GET' && method !== 'HEAD';
+  const res = await fetch('/api' + path, {
+    ...opts,
+    body: write ? (opts.body || '{}') : undefined,
+    headers: write ? { 'Content-Type': 'application/json' } : {},
+  });
+  if (res.status === 401) { showLogin(); throw new Error('未登录'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+// ---------------------------------------------------------------- 登录
+
+function showLogin() {
+  stopPoll();
+  $('#app').hidden = true;
+  $('#login').hidden = false;
+  $('#pw').focus();
+}
+
+$('#do-login').onclick = async () => {
+  $('#login-err').textContent = '';
+  try {
+    await api('/login', { method: 'POST', body: JSON.stringify({ password: $('#pw').value }) });
+    $('#pw').value = '';
+    $('#login').hidden = true;
+    $('#app').hidden = false;
+    startPoll();
+  } catch (e) { $('#login-err').textContent = e.message; }
+};
+$('#pw').onkeydown = (e) => { if (e.key === 'Enter') $('#do-login').click(); };
+
+$('#logout').onclick = async () => {
+  await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  showLogin();
+};
+
+// ---------------------------------------------------------------- 列表
+
+const fmtDur = (s) => {
+  if (s == null) return '—';
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  if (d) return d + 'd ' + h + 'h';
+  if (h) return h + 'h ' + m + 'm';
+  if (m) return m + 'm ' + (s % 60) + 's';
+  return s + 's';
+};
+const fmtBytes = (b) => {
+  if (b == null) return '—';
+  const u = ['B', 'K', 'M', 'G'];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return (i ? b.toFixed(1) : b) + u[i];
+};
+const fmtCpu = (s) => (s == null ? '—' : s < 60 ? s.toFixed(1) + 's' : fmtDur(Math.round(s)));
+
+let projects = [];
+
+function render(list) {
+  projects = list;
+  $('#empty').hidden = list.length > 0;
+  $('#rows').innerHTML = list.map((p) => {
+    const cls = 's-' + (p.state === 'active' ? 'active' : p.state === 'failed' ? 'failed'
+      : p.state.startsWith('activat') || p.state.startsWith('deactivat') ? 'activating' : 'inactive');
+    const stateText = p.state === 'active' ? '运行中'
+      : p.state === 'failed' ? '失败' : p.state === 'inactive' ? '已停止' : p.state;
+    // 死因（含 oom-kill）直接显示在列表里，不让人去日志里翻
+    const why = p.result
+      ? ' <span class="badge s-failed">' + esc(p.result) +
+        (p.exitStatus != null ? ' ' + p.exitStatus : '') + '</span>'
+      : '';
+    const running = p.state === 'active';
+    return '<tr data-slug="' + esc(p.slug) + '">'
+      + '<td class="name">' + esc(p.slug) + '</td>'
+      + '<td><span class="badge ' + cls + '">' + esc(stateText) + '</span>' + why + '</td>'
+      + '<td>' + fmtDur(p.uptimeSec) + '</td>'
+      + '<td>' + fmtBytes(p.memory) + '</td>'
+      + '<td>' + fmtCpu(p.cpuSec) + '</td>'
+      // 轮询是取样，会漏掉崩溃循环的瞬时状态，所以重启次数要显眼
+      + '<td class="' + (p.restarts > 0 ? 'hot' : 'muted') + '">' + p.restarts + '</td>'
+      + '<td class="muted">' + (p.pid || '—') + '</td>'
+      + '<td>' + (p.enabled ? '是' : '<span class="muted">否</span>') + '</td>'
+      + '<td class="ops">'
+      + '<button data-act="' + (running ? 'stop' : 'start') + '">' + (running ? '停止' : '启动') + '</button>'
+      + '<button data-act="restart"' + (running ? '' : ' disabled') + '>重启</button>'
+      + '<button data-act="' + (p.enabled ? 'disable' : 'enable') + '">' + (p.enabled ? '关自启' : '开自启') + '</button>'
+      + '<button data-act="logs">日志</button>'
+      + '<button data-act="edit">编辑</button>'
+      + '<button data-act="delete" class="danger">删除</button>'
+      + '</td></tr>';
+  }).join('');
+}
+
+$('#rows').onclick = async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const slug = btn.closest('tr').dataset.slug;
+  const act = btn.dataset.act;
+
+  if (act === 'logs') return openLogs(slug);
+  if (act === 'edit') return openEdit(slug);
+  if (act === 'delete') {
+    if (!confirm('删除项目 ' + slug + '？会停止并移除 unit 文件（不会删除代码目录和用户）。')) return;
+    btn.disabled = true;
+    try { await api('/projects/' + slug, { method: 'DELETE' }); await refresh(); }
+    catch (err) { alert(err.message); btn.disabled = false; }
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    // 操作后立刻用返回的状态更新这一行，不等下一个 tick
+    const r = await api('/projects/' + slug + '/' + act, { method: 'POST', body: '{}' });
+    if (r.status) render(projects.map((p) => (p.slug === slug ? r.status : p)));
+    refresh();
+  } catch (err) { alert(err.message); btn.disabled = false; }
+};
+
+// ---------------------------------------------------------------- 轮询（2 秒，隐藏时停）
+
+let timer = null;
+async function refresh() {
+  try {
+    render(await api('/projects'));
+    $('#tick').textContent = new Date().toLocaleTimeString();
+  } catch { /* 401 已处理，其他忽略等下一轮 */ }
+}
+function startPoll() {
+  refresh();
+  stopPoll();
+  timer = setInterval(() => {
+    if (document.visibilityState === 'visible') refresh();
+  }, 2000);
+}
+function stopPoll() { if (timer) clearInterval(timer), timer = null; }
+
+// ---------------------------------------------------------------- 新建 / 编辑
+
+const form = $('#form');
+let editing = null;
+
+function openEdit(slug) {
+  editing = slug;
+  $('#edit-err').textContent = '';
+  $('#edit-title').textContent = slug ? '编辑 ' + slug : '新建项目';
+  form.slug.readOnly = !!slug;
+
+  if (!slug) {
+    form.reset();
+    form.restartSec.value = 3;
+    form.node.value = '/usr/local/bin/node';
+    $('#edit').showModal();
+    return;
+  }
+  api('/projects/' + slug).then((p) => {
+    form.slug.value = p.slug;
+    form.user.value = p.user;
+    form.cwd.value = p.cwd;
+    form.node.value = p.node;
+    form.args.value = p.args;
+    form.restart.value = p.restart;
+    form.restartSec.value = p.restartSec;
+    form.memoryMax.value = p.memoryMax || '';
+    form.envtext.value = Object.entries(p.env).map(([k, v]) => k + '=' + v).join('\n');
+    $('#edit').showModal();
+  }).catch((e) => alert(e.message));
+}
+
+$('#new').onclick = () => openEdit(null);
+$('#edit-cancel').onclick = () => $('#edit').close();
+
+$('#edit-save').onclick = async () => {
+  $('#edit-err').textContent = '';
+  const env = {};
+  for (const raw of form.envtext.value.split('\n')) {
+    const l = raw.trim();
+    if (!l || l.startsWith('#')) continue;
+    const i = l.indexOf('=');
+    if (i < 1) { $('#edit-err').textContent = '环境变量这行不是 KEY=VALUE：' + l; return; }
+    env[l.slice(0, i).trim()] = l.slice(i + 1);
+  }
+  const body = {
+    slug: form.slug.value.trim(),
+    user: form.user.value.trim(),
+    cwd: form.cwd.value.trim(),
+    node: form.node.value.trim(),
+    args: form.args.value.trim(),
+    restart: form.restart.value,
+    restartSec: Number(form.restartSec.value),
+    memoryMax: form.memoryMax.value.trim(),
+    env,
+  };
+  $('#edit-save').disabled = true;
+  try {
+    await api('/projects', { method: 'POST', body: JSON.stringify(body) });
+    $('#edit').close();
+    await refresh();
+  } catch (e) {
+    $('#edit-err').textContent = e.message;
+  } finally {
+    $('#edit-save').disabled = false;
+  }
+};
+
+// ---------------------------------------------------------------- 日志
+
+let es = null, logSlug = null;
+
+function logQuery() {
+  const q = new URLSearchParams();
+  if ($('#thisrun').checked) {
+    const p = projects.find((x) => x.slug === logSlug);
+    if (p && p.invocation) q.set('invocation', p.invocation);
+  }
+  if ($('#grep').value.trim()) q.set('grep', $('#grep').value.trim());
+  return q;
+}
+
+function connectLogs() {
+  if (es) es.close();
+  $('#logbox').textContent = '';
+  const q = logQuery();
+  $('#log-dl').href = '/api/projects/' + logSlug + '/logs/download?' + q;
+  es = new EventSource('/api/projects/' + logSlug + '/logs?' + q);
+  es.onmessage = (ev) => appendLog(ev.data);
+  es.addEventListener('err', (ev) => {
+    appendRaw('[journalctl] ' + JSON.parse(ev.data), 'p-err');
+  });
+  es.onerror = () => appendRaw('[连接中断，刷新页面重连]', 'p-err');
+}
+
+function appendLog(json) {
+  let e;
+  try { e = JSON.parse(json); } catch { return appendRaw(json, 'p-dim'); }
+  // 非 UTF-8 的消息 journald 会给成字节数组
+  const msg = Array.isArray(e.MESSAGE)
+    ? new TextDecoder().decode(new Uint8Array(e.MESSAGE))
+    : String(e.MESSAGE ?? '');
+  const pri = Number(e.PRIORITY);
+  const cls = pri <= 3 ? 'p-err' : pri === 4 ? 'p-warn' : pri >= 7 ? 'p-dim' : '';
+  const us = Number(e.__REALTIME_TIMESTAMP);
+  const ts = us ? new Date(us / 1000).toLocaleTimeString() : '';
+  // systemd 自己的消息（Started / exited / Scheduled restart）不过滤，
+  // 它们和应用日志在同一条时间线上，是排查崩溃最有用的部分
+  appendRaw(msg, cls, ts);
+}
+
+function appendRaw(text, cls, ts) {
+  const box = $('#logbox');
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  if (ts) {
+    const t = document.createElement('time');
+    t.textContent = ts;
+    div.appendChild(t);
+  }
+  div.appendChild(document.createTextNode(text));
+  box.appendChild(div);
+  while (box.childElementCount > 4000) box.removeChild(box.firstChild);
+  if ($('#follow').checked) box.scrollTop = box.scrollHeight;
+}
+
+function openLogs(slug) {
+  logSlug = slug;
+  $('#log-title').textContent = '日志 · ' + slug;
+  $('#logs').showModal();
+  connectLogs();
+}
+
+$('#log-apply').onclick = connectLogs;
+$('#thisrun').onchange = connectLogs;
+$('#grep').onkeydown = (e) => { if (e.key === 'Enter') connectLogs(); };
+$('#log-close').onclick = () => $('#logs').close();
+$('#logs').onclose = () => { if (es) es.close(), es = null; };
+
+// ---------------------------------------------------------------- 启动
+
+api('/projects').then((list) => {
+  $('#app').hidden = false;
+  render(list);
+  startPoll();
+}).catch(() => { /* showLogin 已在 api() 里触发 */ });
+</script>
+</body>
+</html>

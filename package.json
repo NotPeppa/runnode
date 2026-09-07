@@ -1,0 +1,18 @@
+{
+  "name": "runnode",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Node project panel on top of systemd",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
