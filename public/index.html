@@ -272,15 +272,8 @@ label.check input { width: auto; }
     <div class="dlg-body">
       <label>项目名（小写字母/数字/短横，创建后不可改）</label>
       <input type="text" name="slug" required placeholder="myapp">
-      <div class="row">
-        <div>
-          <label>运行用户（不存在会自动创建）</label>
-          <input type="text" name="user" required placeholder="myapp">
-        </div>
-        <div>
-          <label>node 可执行文件（绝对路径）</label>
-          <input type="text" name="node" required placeholder="/usr/local/bin/node">
-        </div>
+      <label>运行用户（不存在会自动创建）</label>
+      <input type="text" name="user" required placeholder="myapp">
       </div>
       <label class="check"><input type="checkbox" name="allowRoot"> 允许以 root 运行（危险）</label>
       <div class="hint" id="root-warn" hidden>
@@ -290,9 +283,21 @@ label.check input { width: auto; }
       </div>
       <label>工作目录（绝对路径）</label>
       <input type="text" name="cwd" required placeholder="/srv/myapp">
-      <label>启动参数</label>
-      <input type="text" name="args" required placeholder="dist/index.js">
-      <div class="hint">最终 ExecStart = &lt;node 路径&gt; &lt;启动参数&gt;</div>
+      <label>启动命令</label>
+      <input type="text" name="exec" required placeholder="tsx scripts/monitor.ts">
+      <div class="hint">
+        直接写你在项目目录里会敲的命令。命令名会去 <code>node_modules/.bin</code> 和
+        <code>PATH</code> 里找，保存时解析成绝对路径写入 <code>ExecStart=</code>：<br>
+        <code>tsx scripts/monitor.ts</code> ·
+        <code>node dist/index.js</code> ·
+        <code>npm run monitor</code> ·
+        <code>./start.sh</code><br>
+        <strong>不经过 shell</strong>，所以管道、<code>&amp;&amp;</code>、
+        <code>$VAR</code> 展开都不生效 —— 需要这些就写成脚本文件。<br>
+        走 <code>npm run</code> 会多一个常驻 npm 进程（算进内存统计，列表里的 PID 也是
+        它的）。优雅退出不受影响：systemd 停止时把 <code>SIGTERM</code> 发给整个 cgroup，
+        你的进程会直接收到。
+      </div>
       <label>环境变量（每行一个 KEY=VALUE）</label>
       <textarea name="envtext" placeholder="NODE_ENV=production&#10;PORT=3000"></textarea>
       <div class="hint">工作目录下的 .env 会自动加载（不存在则忽略）</div>
@@ -313,6 +318,21 @@ label.check input { width: auto; }
           <label>内存上限（可空）</label>
           <input type="text" name="memoryMax" placeholder="512M">
         </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>重启次数上限（可空）</label>
+          <input type="text" name="startLimitBurst" placeholder="5">
+        </div>
+        <div>
+          <label>次数统计窗口 · 秒（可空）</label>
+          <input type="text" name="startLimitIntervalSec" placeholder="10">
+        </div>
+      </div>
+      <div class="hint">
+        留空用 systemd 默认：<strong>10 秒内最多重启 5 次</strong>，超过就不再自动重启、
+        状态变 failed 且死因显示 <code>start-limit-hit</code>。
+        窗口填 <code>0</code> 表示不限次数、永远重启。撞上限后在面板点「启动」会自动清计数重试。
       </div>
       <div class="err" id="edit-err" role="alert"></div>
     </div>
@@ -507,7 +527,7 @@ function openEdit(slug) {
   if (!slug) {
     form.reset();
     form.restartSec.value = 3;
-    form.node.value = '/usr/local/bin/node';
+    form.exec.value = '';
     syncRootWarn();
     $('#edit').showModal();
     return;
@@ -516,11 +536,12 @@ function openEdit(slug) {
     form.slug.value = p.slug;
     form.user.value = p.user;
     form.cwd.value = p.cwd;
-    form.node.value = p.node;
-    form.args.value = p.args;
+    form.exec.value = p.exec;
     form.restart.value = p.restart;
     form.restartSec.value = p.restartSec;
     form.memoryMax.value = p.memoryMax || '';
+    form.startLimitBurst.value = p.startLimitBurst || '';
+    form.startLimitIntervalSec.value = p.startLimitIntervalSec || '';
     // 已经是 root 的项目要把勾选带回来，否则原样保存会被拒
     form.allowRoot.checked = p.user === 'root';
     form.envtext.value = Object.entries(p.env).map(([k, v]) => k + '=' + v).join('\n');
@@ -555,11 +576,12 @@ $('#edit-save').onclick = async () => {
     slug: form.slug.value.trim(),
     user: form.user.value.trim(),
     cwd: form.cwd.value.trim(),
-    node: form.node.value.trim(),
-    args: form.args.value.trim(),
+    exec: form.exec.value.trim(),
     restart: form.restart.value,
     restartSec: Number(form.restartSec.value),
     memoryMax: form.memoryMax.value.trim(),
+    startLimitBurst: form.startLimitBurst.value.trim(),
+    startLimitIntervalSec: form.startLimitIntervalSec.value.trim(),
     allowRoot: form.allowRoot.checked,
     env,
   };

@@ -147,17 +147,55 @@ sudo runnode uninstall --all    # 连所有项目 unit 一起停掉删掉
 |---|---|
 | 运行用户（不存在自动建） | `User=` |
 | 工作目录 | `WorkingDirectory=` |
-| node 可执行路径 | `ExecStart=` 前半段 |
-| 启动参数 | `ExecStart=` 后半段 |
+| 启动命令 | `ExecStart=` |
 | 环境变量 | `Environment=` |
 | 重启策略 / 间隔 | `Restart=` / `RestartSec=` |
+| 重启次数上限 / 统计窗口 | `StartLimitBurst=` / `StartLimitIntervalSec=` |
 | 内存上限 | `MemoryMax=` |
 
-工作目录下的 `.env` 会自动加载（不存在就忽略）。多版本 node 就填不同的绝对路径，
-fnm / nvm 装的都行 —— 不需要额外的版本管理功能。
+工作目录下的 `.env` 会自动加载（不存在就忽略）。
 
-项目**必须以非 root 用户运行**。工作目录属主不对时面板会拒绝创建并给出要执行的
-`chown` 命令 —— 不自动 `chown -R`，路径算错是不可逆的。
+### 启动命令怎么写
+
+直接写你在项目目录里会敲的命令。命令名会去 `<工作目录>/node_modules/.bin` 和 `PATH`
+里找，保存时解析成绝对路径写进 `ExecStart=` —— 所以 `systemctl cat` 看到的就是实际
+执行的东西，没有运行时的 PATH 惊喜。
+
+```
+tsx scripts/monitor.ts        → /srv/app/node_modules/.bin/tsx scripts/monitor.ts
+node dist/index.js            → /usr/local/bin/node dist/index.js
+npm run monitor               → /usr/local/bin/npm run monitor
+./start.sh                    → /srv/app/start.sh
+/opt/node22/bin/node app.js   → 原样（绝对路径不查找）
+```
+
+同名时项目本地的 `.bin` 优先于全局，和 `npm run` 的行为一致。找不到命令时报错会列出
+找过的目录。
+
+两条来自 systemd 的硬约束：
+
+- **不经过 shell** —— 管道、`&&`、`$VAR` 展开都不生效。需要这些就写成脚本文件，
+  然后填 `./start.sh`。
+- **最终必须是绝对路径** —— 上面的解析就是为了让你不用自己写。
+
+多版本 node 就填不同的绝对路径（fnm / nvm / 官方 tarball 都行），不需要额外的版本
+管理功能。
+
+### 用 npm run 还是直接指到入口
+
+两种都行。`npm run monitor` 直接这么填就可以。
+
+**优雅退出不受影响。** systemd 的 `KillMode` 默认是 `control-group`，停止时 `SIGTERM`
+发给 cgroup 里的每一个进程 —— 你的 node 进程会直接从 systemd 收到信号，不依赖 npm
+转发。（只有显式设成 `KillMode=mixed` 才变成「只给主进程发 SIGTERM」。）
+
+走 npm 的实际代价只有两条，都不影响功能：
+
+- 多一个常驻 npm 进程，会算进 `MemoryCurrent`（列表里的内存数字）
+- 列表里的 PID 是 npm 的，不是你的应用进程
+
+想省掉这一层就把 `package.json` 里那条脚本的内容直接填进来 —— 比如
+`"monitor": "tsx scripts/monitor.ts"` 就填 `tsx scripts/monitor.ts`。
 
 ## 日志
 
@@ -172,6 +210,40 @@ fnm / nvm 装的都行 —— 不需要额外的版本管理功能。
 
 systemd 自己的消息（`Started` / `Main process exited, status=1` / `Scheduled restart`）
 不做过滤 —— 它们和应用日志在同一条时间线上，是排查崩溃最有用的部分。
+
+## 常见启动失败
+
+项目状态是 `failed`、但应用日志里什么都没有时，先看 `runnode log <项目> -n 50`
+里 systemd 自己那几行。
+
+**`Failed at step EXEC ... Permission denied`**
+
+运行用户无法执行 node。最常见的是 node 装在 root 家目录里（nvm / fnm / n），
+`/usr/local/bin/node` 只是软链，真身在 `/root/.nvm/versions/...`，而 `/root` 是 `0700`，
+别的用户连穿过去都不行。
+
+```sh
+namei -l /usr/local/bin/node    # 逐段看权限，哪一段是 drwx------ 就是它
+```
+
+修法：把 node 装到全局可达的位置（官方 tarball 解到 `/usr/local`），
+或者二进制本身权限不对时 `chmod 755`。面板保存时会先以目标用户身份 `test -x` 一次，
+所以正常情况下你会在表单上就被拦住，而不是等启动失败。
+
+**`Failed at step CHDIR`，或工作目录报属主不对**
+
+同一类问题：代码放在 `/root/xxx` 下时，即使 chown 给了项目用户，它也穿不过 `/root`。
+代码放 `/srv` 或 `/home` 下。
+
+**`Result=oom-kill`**
+
+被内核 OOM 杀掉，应用日志里通常什么都没有。列表里会直接显示这个死因。
+调大或去掉表单里的「内存上限」，或者去查内存泄漏。
+
+**`EADDRINUSE`**
+
+端口被占。`ss -ltnp | grep :<端口>` 看是谁占的 —— 常见是同一个项目的旧进程还在，
+或者你之前手动 `node app.js` 跑的那个没关。
 
 ## 开发
 

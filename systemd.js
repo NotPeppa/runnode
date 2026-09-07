@@ -59,6 +59,30 @@ function absPath(v, what, opts) {
   return s;
 }
 
+// ExecStart 的首段（那个可执行文件）。带空格的路径不支持 —— 服务器上属于病态情况，
+// 支持它就得实现 systemd 的引号规则，不值得。
+const execBin = (exec) => exec.split(' ')[0];
+
+// systemd 的 ExecStart 首段必须是绝对路径，但人想写的是 `tsx scripts/monitor.ts`
+// 或 `npm run monitor`。这里负责把首段解析成绝对路径，解析结果写进 unit ——
+// 存的是绝对路径，所以 `systemctl cat` 看到的就是实际执行的东西，没有运行时惊喜。
+function binDirs(cwd) {
+  const fromPath = String(process.env.PATH || '').split(':').filter((d) => d.startsWith('/'));
+  return [...new Set([
+    cwd + '/node_modules/.bin',   // tsx / vite / nest 这类项目本地命令
+    ...fromPath,
+    '/usr/local/bin', '/usr/bin', '/bin',
+  ])];
+}
+
+// exists 可注入，便于测试（真实调用走文件系统）
+function resolveBin(tok, cwd, dirs, exists) {
+  if (tok.startsWith('/')) return tok;                 // 已是绝对路径
+  if (tok.includes('/')) return cwd + '/' + tok.replace(/^\.\//, ''); // ./start.sh
+  for (const d of dirs) if (exists(d + '/' + tok)) return d + '/' + tok;
+  return null;
+}
+
 function validate(input) {
   const slug = line(input.slug, '项目名');
   if (!SLUG_RE.test(slug)) throw new Fail(400, BAD_SLUG);
@@ -73,8 +97,12 @@ function validate(input) {
       '确实需要 root，请勾选表单里的「允许以 root 运行」。');
   }
 
-  const args = line(input.args, '启动参数');
-  if (!args) throw new Fail(400, '启动参数不能为空（例如 dist/index.js）');
+  // 一个完整的 ExecStart。systemd 要求首段是绝对路径，这样 npm / pnpm / 自己的
+  // 启动脚本都能写，不用再假设入口一定是 node。
+  const exec = line(input.exec, '启动命令');
+  if (!exec) {
+    throw new Fail(400, '启动命令不能为空，例如 /usr/local/bin/node dist/index.js');
+  }
 
   const env = {};
   for (const [k, v] of Object.entries(input.env || {})) {
@@ -96,11 +124,35 @@ function validate(input) {
     throw new Fail(400, '内存上限格式形如 512M / 2G');
   }
 
-  // 碰文件系统的检查放最后：纯字符串校验（含换行注入）先跑完，失败得更快也更安全
-  const cwd = absPath(input.cwd, '工作目录', { dir: true });
-  const node = absPath(input.node, 'node 可执行文件');
+  // 留空 = 用 systemd 默认（10 秒内最多 5 次）。窗口 0 = 不限次数。
+  const startLimitBurst = line(input.startLimitBurst || '', '重启次数上限');
+  if (startLimitBurst && !/^\d{1,4}$/.test(startLimitBurst)) {
+    throw new Fail(400, '重启次数上限必须是 0..9999 的整数（留空用默认 5）');
+  }
+  const startLimitIntervalSec = line(input.startLimitIntervalSec || '', '重启统计窗口');
+  if (startLimitIntervalSec && !/^\d{1,5}$/.test(startLimitIntervalSec)) {
+    throw new Fail(400, '重启统计窗口必须是 0..99999 秒的整数（留空用默认 10，填 0 表示不限次数）');
+  }
 
-  return { slug, user, cwd, node, args, env, restart, restartSec, memoryMax };
+  // 碰文件系统的检查放最后：纯字符串校验（含换行注入）先跑完，失败得更快也更安全。
+  const cwd = absPath(input.cwd, '工作目录', { dir: true });
+
+  // 首段解析成绝对路径。只校验它，后面的参数不管。
+  const tok = execBin(exec);
+  const dirs = binDirs(cwd);
+  const bin = resolveBin(tok, cwd, dirs, (f) => fs.existsSync(f));
+  if (!bin) {
+    throw new Fail(400,
+      '找不到命令 ' + tok + '。找过这些目录：\n  ' + dirs.join('\n  ') + '\n' +
+      '如果它是项目本地依赖，先在工作目录里装好（npm i），或直接填绝对路径。');
+  }
+  absPath(bin, '启动命令里的可执行文件');
+  const execResolved = bin + exec.slice(tok.length);
+
+  return {
+    slug, user, cwd, exec: execResolved, env, restart, restartSec, memoryMax,
+    startLimitBurst, startLimitIntervalSec,
+  };
 }
 
 // ---------------------------------------------------------------- 渲染 / 解析
@@ -114,6 +166,10 @@ function render(p) {
     '[Unit]',
     'Description=runnode: ' + p.slug,
     'After=network.target',
+    // StartLimit* 在 [Unit] 段（systemd 229 起从 [Service] 移到这里）。
+    // 留空则用系统默认：DefaultStartLimitIntervalSec=10s / DefaultStartLimitBurst=5。
+    ...(p.startLimitBurst ? ['StartLimitBurst=' + p.startLimitBurst] : []),
+    ...(p.startLimitIntervalSec ? ['StartLimitIntervalSec=' + p.startLimitIntervalSec] : []),
     '',
     '[Service]',
     'Type=simple',
@@ -121,7 +177,7 @@ function render(p) {
     'WorkingDirectory=' + p.cwd,
     'EnvironmentFile=-' + p.cwd + '/.env',
     ...Object.entries(p.env).map(([k, v]) => 'Environment=' + quote(k + '=' + v)),
-    'ExecStart=' + p.node + ' ' + p.args,
+    'ExecStart=' + p.exec,
     'Restart=' + p.restart,
     'RestartSec=' + p.restartSec,
     // 崩溃循环刷栈时 journald 默认会静默丢行，见 DESIGN.md §6.2
@@ -147,20 +203,17 @@ function parse(slug, text) {
     if (i > 0) env[raw.slice(0, i)] = raw.slice(i + 1);
   }
 
-  // node 路径不允许空格（见 absPath），所以按第一个空格切是安全的
-  const exec = one('ExecStart');
-  const sp = exec.indexOf(' ');
-
   return {
     slug,
     user: one('User'),
     cwd: one('WorkingDirectory'),
-    node: sp < 0 ? exec : exec.slice(0, sp),
-    args: sp < 0 ? '' : exec.slice(sp + 1),
+    exec: one('ExecStart'),
     env,
     restart: one('Restart') || 'always',
     restartSec: Number(one('RestartSec') || 3),
     memoryMax: one('MemoryMax'),
+    startLimitBurst: one('StartLimitBurst'),
+    startLimitIntervalSec: one('StartLimitIntervalSec'),
   };
 }
 
@@ -286,11 +339,44 @@ async function ensureUser(user) {
   }
 }
 
+// 目标用户能否执行/穿过某个路径。
+// 只看属主和 mode 不够：node 常被装在 /root/.nvm 下再软链到 /usr/local/bin，
+// 那样二进制本身是 755，但 /root 是 0700，别的用户穿不过去 —— 只有真的以那个
+// 用户身份 test 一次才测得出来。返回 null 表示没有 runuser，跳过检查。
+async function userCanExec(user, target) {
+  try {
+    await execFileP('runuser', ['-u', user, '--', 'test', '-x', target]);
+    return true;
+  } catch (e) {
+    if (e.code === 'ENOENT') return null; // 系统没有 runuser
+    return false;
+  }
+}
+
 async function save(input) {
   const p = validate(input);
 
   if (p.user !== 'root') {
     await ensureUser(p.user);
+
+    // 这两条不拦的话，错误只会在启动后以
+    // 「Failed at step EXEC ... Permission denied」的形式出现在 journal 里
+    const bin = execBin(p.exec);
+    if (await userCanExec(p.user, bin) === false) {
+      throw new Fail(400,
+        '用户 ' + p.user + ' 无法执行 ' + bin + '。\n' +
+        '常见原因：node 装在 root 家目录里（nvm/fnm），/usr/local/bin/node 只是软链，' +
+        '而 /root 是 0700，别的用户穿不过去。\n' +
+        '定位：namei -l ' + bin + '\n' +
+        '修法：把 node 装到 /usr/local 等全局可达位置，或 chmod 755 该二进制。');
+    }
+    if (await userCanExec(p.user, p.cwd) === false) {
+      throw new Fail(400,
+        '用户 ' + p.user + ' 无法进入工作目录 ' + p.cwd + '。\n' +
+        '即使属主已经是它，父目录不可穿越也进不去（例如代码放在 /root 下）。\n' +
+        '定位：namei -l ' + p.cwd + '\n' +
+        '修法：把代码放到 /srv 或 /home 下。');
+    }
     // chown -R 路径算错就是不可逆的系统级破坏，所以只检查不修。见 DESIGN.md §5.3。
     // ponytail: 手动 chown 烦到人了再加一键修复，且必须带路径白名单。
     const st = fs.statSync(p.cwd);
@@ -308,6 +394,11 @@ async function save(input) {
 async function act(slug, action) {
   if (!ACTIONS.has(action)) throw new Fail(400, '未知操作');
   unitPath(slug); // 校验 slug
+  // 撞到 StartLimit 之后 systemctl start 会直接失败（start request repeated too
+  // quickly），必须先清掉失败计数。用户点启动就是想再试一次。
+  if (action === 'start' || action === 'restart') {
+    await systemctl(['reset-failed', unitName(slug)]).catch(() => {});
+  }
   await systemctl([action, unitName(slug)]);
   // systemctl 是同步的（等 job 完成），所以这里拿到的状态已是新的。见 DESIGN.md §7。
   return status(slug);
@@ -352,6 +443,7 @@ function journal(slug, opts) {
 
 module.exports = {
   Fail, UNIT_DIR, PREFIX, SLUG_RE, unitName, unitPath,
-  validate, render, parse, journalArgs, parseShow, SHOW_PROPS,
+  validate, render, parse, journalArgs, parseShow, SHOW_PROPS, execBin,
+  resolveBin, binDirs,
   list, get, status, slugs, save, act, remove, journal, ensureUser,
 };

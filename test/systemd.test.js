@@ -10,12 +10,13 @@ const base = {
   slug: 'myapp',
   user: 'myapp',
   cwd: '/srv/myapp',
-  node: '/usr/local/bin/node',
-  args: 'dist/index.js --port 3000',
+  exec: '/usr/local/bin/node dist/index.js --port 3000',
   env: { NODE_ENV: 'production', PORT: '3000' },
   restart: 'always',
   restartSec: 3,
   memoryMax: '512M',
+  startLimitBurst: '',
+  startLimitIntervalSec: '',
 };
 
 test('render → parse 往返不丢字段', () => {
@@ -51,19 +52,88 @@ test('渲染出的 unit 带上了防丢日志和自启', () => {
 // 这是本项目最重要的一条校验：unit 是行式语法，值里的换行会变成新指令。
 test('字段值里的换行被拒绝（否则可注入 User=root 提权）', () => {
   const inject = 'x\nUser=root';
-  for (const field of ['args', 'user', 'memoryMax']) {
+  for (const field of ['exec', 'user', 'memoryMax']) {
     assert.throws(() => sd.validate({ ...base, [field]: inject }), /换行|不合法/,
       field + ' 应该拒绝换行');
   }
   assert.throws(() => sd.validate({ ...base, env: { X: inject } }), /换行/);
   assert.throws(() => sd.validate({ ...base, env: { 'X\nUser': 'y' } }), /换行/);
-  assert.throws(() => sd.validate({ ...base, args: 'x\rUser=root' }), /换行/);
+  assert.throws(() => sd.validate({ ...base, exec: 'x\rUser=root' }), /换行/);
 });
 
 test('注入的值即使侥幸进到渲染，也不会产生新指令', () => {
   // env 值走 systemd 的双引号转义，所以就算换行漏过校验也只是引号里的字面量
   const text = sd.render({ ...base, env: { X: 'a"b' } });
   assert.match(text, /^Environment="X=a\\"b"$/m);
+});
+
+test('启动命令可以是 npm 等任意可执行文件，不假设入口是 node', () => {
+  for (const cmd of [
+    '/usr/local/bin/npm start',
+    '/usr/local/bin/npm run monitor',
+    '/usr/local/bin/node --max-old-space-size=2048 server.js',
+    '/srv/app/start.sh',
+  ]) {
+    const text = sd.render({ ...base, exec: cmd });
+    assert.match(text, new RegExp('^ExecStart=' + cmd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'm'));
+    assert.equal(sd.parse('myapp', text).exec, cmd);
+  }
+  // 首段就是要做存在性/权限检查的那个可执行文件
+  assert.equal(sd.execBin('/usr/local/bin/npm run monitor'), '/usr/local/bin/npm');
+  assert.equal(sd.execBin('/usr/local/bin/node'), '/usr/local/bin/node');
+});
+
+test('启动命令不能为空', () => {
+  assert.throws(() => sd.validate({ ...base, exec: '' }), /启动命令不能为空/);
+});
+
+// 人想写的是 `tsx scripts/monitor.ts`，不是绝对路径。首段解析成绝对路径后再写进 unit，
+// 所以 systemctl cat 看到的就是实际执行的东西。exists 注入以便跨平台跑。
+test('命令名解析：node_modules/.bin 优先，其次 PATH', () => {
+  const CWD = '/srv/maoyan';
+  const dirs = [CWD + '/node_modules/.bin', '/usr/local/bin', '/usr/bin'];
+  const has = (...paths) => (f) => paths.includes(f);
+
+  // 项目本地依赖（tsx / vite / nest 这类）
+  assert.equal(
+    sd.resolveBin('tsx', CWD, dirs, has(CWD + '/node_modules/.bin/tsx')),
+    CWD + '/node_modules/.bin/tsx');
+
+  // 本地没有就往 PATH 找
+  assert.equal(
+    sd.resolveBin('npm', CWD, dirs, has('/usr/local/bin/npm')),
+    '/usr/local/bin/npm');
+
+  // 同名时本地优先（项目锁定的版本应该赢过全局的）
+  assert.equal(
+    sd.resolveBin('tsx', CWD, dirs, has(CWD + '/node_modules/.bin/tsx', '/usr/local/bin/tsx')),
+    CWD + '/node_modules/.bin/tsx');
+
+  // 绝对路径原样返回，不去查
+  assert.equal(sd.resolveBin('/opt/node/bin/node', CWD, dirs, () => false), '/opt/node/bin/node');
+
+  // 带斜杠的当成相对工作目录，不去猜 PATH
+  assert.equal(sd.resolveBin('./start.sh', CWD, dirs, () => false), CWD + '/start.sh');
+  assert.equal(sd.resolveBin('scripts/run.sh', CWD, dirs, () => false), CWD + '/scripts/run.sh');
+
+  // 找不到就是 null，由 validate 报出「找过哪些目录」
+  assert.equal(sd.resolveBin('nope', CWD, dirs, () => false), null);
+});
+
+test('binDirs 把项目本地 .bin 排在最前，且只收绝对路径', () => {
+  const dirs = sd.binDirs('/srv/maoyan');
+  assert.equal(dirs[0], '/srv/maoyan/node_modules/.bin');
+  assert.ok(dirs.every((d) => d.startsWith('/')), 'Windows 上的 PATH 项要被过滤掉');
+  assert.equal(new Set(dirs).size, dirs.length, '不该有重复目录');
+});
+
+test('找不到命令时报错列出找过的目录', () => {
+  // cwd 用 '/'：任何平台上都存在，这条测试才不依赖环境里有 /srv/myapp
+  assert.throws(() => sd.validate({ ...base, cwd: '/', exec: 'definitely-not-a-real-bin x' }), (e) => {
+    assert.match(e.message, /找不到命令 definitely-not-a-real-bin/);
+    assert.match(e.message, /node_modules\/\.bin/);
+    return true;
+  });
 });
 
 test('项目名和路径校验', () => {
@@ -93,11 +163,34 @@ test('显式 allowRoot 后不再因 root 被拒', () => {
   }
 });
 
+test('重启次数上限：留空不写入 unit，设了就写进 [Unit] 段', () => {
+  // 留空 → 不出现，交给 systemd 默认（10 秒 5 次）
+  const bare = sd.render(base);
+  assert.doesNotMatch(bare, /StartLimit/);
+
+  const p = { ...base, startLimitBurst: '3', startLimitIntervalSec: '60' };
+  const text = sd.render(p);
+  assert.match(text, /^StartLimitBurst=3$/m);
+  assert.match(text, /^StartLimitIntervalSec=60$/m);
+  // 必须在 [Unit] 段里：写到 [Service] 里 systemd 229+ 会忽略
+  const unitSection = text.slice(text.indexOf('[Unit]'), text.indexOf('[Service]'));
+  assert.match(unitSection, /StartLimitBurst=3/);
+  assert.match(unitSection, /StartLimitIntervalSec=60/);
+  // 回读
+  assert.deepEqual(sd.parse('myapp', text), p);
+
+  // 窗口 0 = 不限次数，也要能写进去（别被「留空」的判断吃掉）
+  assert.match(sd.render({ ...base, startLimitIntervalSec: '0' }), /^StartLimitIntervalSec=0$/m);
+});
+
 test('重启策略和内存上限的取值受限', () => {
   assert.throws(() => sd.validate({ ...base, restart: 'sometimes' }), /重启策略/);
   assert.throws(() => sd.validate({ ...base, restartSec: 0 }), /RestartSec/);
   assert.throws(() => sd.validate({ ...base, restartSec: 1.5 }), /RestartSec/);
   assert.throws(() => sd.validate({ ...base, memoryMax: '512MB' }), /内存上限/);
+  assert.throws(() => sd.validate({ ...base, startLimitBurst: 'abc' }), /重启次数上限/);
+  assert.throws(() => sd.validate({ ...base, startLimitBurst: '-1' }), /重启次数上限/);
+  assert.throws(() => sd.validate({ ...base, startLimitIntervalSec: '10s' }), /重启统计窗口/);
 });
 
 test('journalctl 参数：默认按 unit，指定 InvocationID 时只看本次运行', () => {
