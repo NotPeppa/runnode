@@ -110,13 +110,14 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--mute
 textarea { min-height: 100px; font-family: ui-monospace, Menlo, Consolas, monospace; resize: vertical; }
 dialog {
   width: min(680px, calc(100vw - 28px)); border: 1px solid var(--line); border-radius: 18px; background: var(--card);
-  color: var(--fg); padding: 0; box-shadow: var(--shadow-lg);
+  max-height: calc(100dvh - 28px); color: var(--fg); padding: 0; overflow: hidden; box-shadow: var(--shadow-lg);
 }
 dialog::backdrop { background: rgba(4, 14, 12, .64); backdrop-filter: blur(4px); }
-.dlg-head { padding: 20px 22px 16px; border-bottom: 1px solid var(--line); font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
+#edit form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100dvh - 30px); }
+.dlg-head { flex: 0 0 auto; padding: 20px 22px 16px; border-bottom: 1px solid var(--line); font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
 .dlg-sub { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 400; letter-spacing: 0; }
-.dlg-body { padding: 6px 22px 22px; max-height: 68vh; overflow: auto; }
-.dlg-foot { padding: 14px 22px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; background: var(--surface); }
+.dlg-body { min-height: 0; padding: 6px 22px 22px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.dlg-foot { flex: 0 0 auto; padding: 14px 22px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; background: var(--surface); }
 .row { display: flex; gap: 14px; }
 .row > * { flex: 1; }
 #logs { width: min(1100px, calc(100vw - 28px)); }
@@ -178,7 +179,8 @@ label.check input { width: auto; }
   .ops { flex-wrap: wrap; padding-top: 4px; }
   .ops button { flex: 1 1 auto; min-height: 38px; }
   .row { display: block; }
-  .dlg-body { max-height: 66vh; }
+  dialog { max-height: calc(100dvh - 16px); }
+  #edit form { max-height: calc(100dvh - 18px); }
 }
 @media (max-width: 420px) {
   .brand { min-width: 0; }
@@ -274,7 +276,6 @@ label.check input { width: auto; }
       <input type="text" name="slug" required placeholder="myapp">
       <label>运行用户（不存在会自动创建）</label>
       <input type="text" name="user" required placeholder="myapp">
-      </div>
       <label class="check"><input type="checkbox" name="allowRoot"> 允许以 root 运行（危险）</label>
       <div class="hint" id="root-warn" hidden>
         项目将以 root 身份运行 —— 进程里任何代码（含未审计的 npm 依赖）都能读写整台机器，
