@@ -74,8 +74,23 @@ test('项目名和路径校验', () => {
   assert.match(sd.unitPath('ok-app-1'), /runnode-ok-app-1\.service$/);
 });
 
-test('拒绝以 root 运行，除非显式允许', () => {
-  assert.throws(() => sd.validate({ ...base, user: 'root' }), /root/);
+test('拒绝以 root 运行，并给出可执行的出路', () => {
+  assert.throws(() => sd.validate({ ...base, user: 'root' }), (e) => {
+    assert.match(e.message, /拒绝以 root 运行/);
+    // 报错必须自带出路：chown 命令 + 勾选框的名字（消息里提到的东西界面上要真有）
+    assert.match(e.message, /chown -R <用户名>: \/srv\/myapp/);
+    assert.match(e.message, /允许以 root 运行/);
+    return true;
+  });
+});
+
+test('显式 allowRoot 后不再因 root 被拒', () => {
+  try {
+    sd.validate({ ...base, user: 'root', allowRoot: true });
+  } catch (e) {
+    // 这台机器上 /srv/myapp 不存在，所以还会因路径报错 —— 但不该再是 root 那条
+    assert.doesNotMatch(e.message, /拒绝以 root/);
+  }
 });
 
 test('重启策略和内存上限的取值受限', () => {

@@ -81,6 +81,10 @@ dialog::backdrop { background: #0008; }
 .empty { padding: 40px; text-align: center; color: var(--muted); }
 #login { max-width: 320px; margin: 12vh auto; background: var(--card); padding: 20px; border: 1px solid var(--line); border-radius: 10px; }
 .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+label.check { display: flex; align-items: center; gap: 6px; margin: 12px 0 0; font-size: 13px; color: var(--fg); }
+label.check input { width: auto; }
+#root-warn { color: var(--bad); }
+#root-warn code { background: var(--bg); padding: 0 3px; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -127,6 +131,12 @@ dialog::backdrop { background: #0008; }
           <label>node 可执行文件（绝对路径）</label>
           <input type="text" name="node" required placeholder="/usr/local/bin/node">
         </div>
+      </div>
+      <label class="check"><input type="checkbox" name="allowRoot"> 允许以 root 运行（危险）</label>
+      <div class="hint" id="root-warn" hidden>
+        项目将以 root 身份运行 —— 进程里任何代码（含未审计的 npm 依赖）都能读写整台机器，
+        也能读到其他项目的 <code>.env</code>。除非项目确实需要绑定 1024 以下端口或操作系统文件，
+        否则请改用专用用户。
       </div>
       <label>工作目录（绝对路径）</label>
       <input type="text" name="cwd" required placeholder="/srv/myapp">
@@ -336,6 +346,7 @@ function openEdit(slug) {
     form.reset();
     form.restartSec.value = 3;
     form.node.value = '/usr/local/bin/node';
+    syncRootWarn();
     $('#edit').showModal();
     return;
   }
@@ -348,10 +359,22 @@ function openEdit(slug) {
     form.restart.value = p.restart;
     form.restartSec.value = p.restartSec;
     form.memoryMax.value = p.memoryMax || '';
+    // 已经是 root 的项目要把勾选带回来，否则原样保存会被拒
+    form.allowRoot.checked = p.user === 'root';
     form.envtext.value = Object.entries(p.env).map(([k, v]) => k + '=' + v).join('\n');
+    syncRootWarn();
     $('#edit').showModal();
   }).catch((e) => alert(e.message));
 }
+
+// 填了 root 或勾了框就把风险说明露出来，并自动勾上（省一次被拒的往返）
+function syncRootWarn() {
+  const isRoot = form.user.value.trim() === 'root';
+  if (isRoot) form.allowRoot.checked = true;
+  $('#root-warn').hidden = !(isRoot || form.allowRoot.checked);
+}
+form.user.oninput = syncRootWarn;
+form.allowRoot.onchange = syncRootWarn;
 
 $('#new').onclick = () => openEdit(null);
 $('#edit-cancel').onclick = () => $('#edit').close();
@@ -375,6 +398,7 @@ $('#edit-save').onclick = async () => {
     restart: form.restart.value,
     restartSec: Number(form.restartSec.value),
     memoryMax: form.memoryMax.value.trim(),
+    allowRoot: form.allowRoot.checked,
     env,
   };
   $('#edit-save').disabled = true;

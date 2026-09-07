@@ -66,7 +66,11 @@ function validate(input) {
   const user = line(input.user, '运行用户');
   if (!USER_RE.test(user)) throw new Fail(400, '运行用户名不合法');
   if (user === 'root' && !input.allowRoot) {
-    throw new Fail(400, '拒绝以 root 运行项目。确实需要请显式勾选。');
+    throw new Fail(400,
+      '拒绝以 root 运行项目：那样进程里任何代码（含未审计的 npm 依赖）都能读写整台机器。\n' +
+      '建议改用专用用户，面板会自动创建，你只需把工作目录给它：\n' +
+      '  chown -R <用户名>: ' + (line(input.cwd || '<工作目录>', '工作目录') || '<工作目录>') + '\n' +
+      '确实需要 root，请勾选表单里的「允许以 root 运行」。');
   }
 
   const args = line(input.args, '启动参数');
